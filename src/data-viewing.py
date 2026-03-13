@@ -10,7 +10,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 # ===================== 模块2：加载原始数据集 =====================
 # 读取训练集数据，将第一列（用户ID）设为行索引，避免多余列
-df = pd.read_csv("data/cs-training.csv", index_col=0)
+df = pd.read_csv("../data/raw/cs-training.csv", index_col=0)
 
 # 输出加载成功基础信息
 print("="*60)
