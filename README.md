@@ -1,2 +1,2 @@
 # Credit-card-delinquency-prediction-based-on-DNN
-毕设代码存储
+**SeriousDlqin2yrs**：90 天 + 严重逾期（标签），二分类 (1 = 是 / 0 = 否)

@@ -20,26 +20,6 @@ print(f"数据集总列数（输入特征数+目标标签列）：{df.shape[1]} 
 print("="*60)
 
 
-# ===================== 模块3：特征与标签官方含义对照 =====================
-print("\n📌 数据集字段官方含义说明（来自Data Dictionary）：")
-feature_desc_dict = {
-    "SeriousDlqin2yrs": "【目标标签】用户未来2年是否出现90天以上严重逾期（1=逾期，0=正常）",
-    "RevolvingUtilizationOfUnsecuredLines": "无担保信贷额度使用率：信用卡/信用贷等无担保循环信贷余额/授信总额，百分比型",
-    "age": "借款人年龄，整数型",
-    "NumberOfTime30-59DaysPastDueNotWorse": "过去2年，借款人出现30-59天逾期的次数，整数型",
-    "DebtRatio": "负债比例：月债务支出+生活成本/月总收入，百分比型",
-    "MonthlyIncome": "月收入，连续数值型",
-    "NumberOfOpenCreditLinesAndLoans": "未结清信贷总数：未结清贷款（车贷/房贷）+ 信用卡账户数，整数型",
-    "NumberOfTimes90DaysLate": "历史90天以上严重逾期次数，整数型",
-    "NumberRealEstateLoansOrLines": "不动产信贷数量：房贷/房屋净值贷总数，整数型",
-    "NumberOfTime60-89DaysPastDueNotWorse": "过去2年，借款人出现60-89天逾期的次数，整数型",
-    "NumberOfDependents": "家庭抚养人数（不含本人），整数型"
-}
-
-# 逐行打印字段含义，方便记录
-for col_name, desc in feature_desc_dict.items():
-    print(f"▪️ {col_name}：{desc}")
-print("="*60)
 
 
 # ===================== 模块4：数据基本信息探查 =====================
@@ -116,7 +96,7 @@ for p in ax.patches:
 plt.ylim(0, label_count[0] * 1.1)  # 调整y轴范围，避免标注溢出
 plt.tight_layout()
 # 保存高清图片到本地，可直接插入毕设报告
-plt.savefig("标签分布数量柱状图.png", dpi=300, bbox_inches="tight")
+plt.savefig("../data/output-img/标签分布数量柱状图.png", dpi=300, bbox_inches="tight")
 plt.show()
 
 # 2. 饼图：展示两类用户的占比
@@ -132,7 +112,7 @@ plt.pie(
 plt.title("信用卡逾期用户占比分布", fontsize=14, fontweight="bold")
 plt.axis("equal")  # 保证饼图为正圆形
 plt.tight_layout()
-plt.savefig("标签占比饼图.png", dpi=300, bbox_inches="tight")
+plt.savefig("../data/output-img/标签占比饼图.png", dpi=300, bbox_inches="tight")
 plt.show()
 
 
