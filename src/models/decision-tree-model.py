@@ -1,0 +1,210 @@
+import os
+import json
+import time
+import joblib
+import pandas as pd
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+)
+
+def evaluate_binary(y_true, y_pred, y_prob):
+    return {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "auc": float(roc_auc_score(y_true, y_prob)),
+        "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+    }
+
+
+def build_prediction_frame(fold, val_df, y_true, y_pred, y_prob):
+    prediction_df = pd.DataFrame(
+        {
+            "fold": fold,
+            "sample_index": val_df.index,
+            "y_true": y_true.to_numpy(),
+            "y_pred": y_pred,
+            "y_prob": y_prob,
+        }
+    )
+    return prediction_df
+
+
+def print_metric_block(title, metrics):
+    print(f"\n===== {title} =====")
+    print(f"Accuracy           : {metrics['accuracy']:.6f}")
+    print(f"Precision          : {metrics['precision']:.6f}")
+    print(f"Recall             : {metrics['recall']:.6f}")
+    print(f"F1 Score           : {metrics['f1']:.6f}")
+    print(f"AUC                : {metrics['auc']:.6f}")
+    if "train_time_seconds" in metrics:
+        print(f"Train Time (s)     : {metrics['train_time_seconds']:.6f}")
+    if "confusion_matrix" in metrics:
+        print(f"Confusion Matrix   : {metrics['confusion_matrix']}")
+
+
+def main():
+    # ========== 路径配置 ==========
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    train_dir = os.path.join(project_root, "data", "processed", "five_folds_oversampled")
+    val_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
+
+    output_dir = os.path.join(project_root, "data", "model-output", "decision-tree-model")
+    os.makedirs(output_dir, exist_ok=True)
+
+    target_col = "SeriousDlqin2yrs"
+
+    # ========== 决策树参数（可调） ==========
+    # 你可以先用这组稳健参数，再逐步网格搜索
+    dt_params = {
+        "criterion": "gini",          # 或 "entropy"
+        "max_depth": 10,               # 控制过拟合，None 会更容易过拟合
+        "min_samples_split": 30,
+        "min_samples_leaf": 15,
+        "random_state": 42
+
+    }
+
+    fold_metrics = []
+    oof_predictions = []
+    best_auc = -1.0
+    best_fold = None
+    best_model = None
+
+    for fold in range(1, 6):
+        train_path = os.path.join(train_dir, f"fold_{fold}_train_oversampled.csv")
+        val_path = os.path.join(val_dir, f"fold_{fold}_val_scaled.csv")
+
+        if not os.path.exists(train_path):
+            raise FileNotFoundError(f"找不到训练集文件: {train_path}")
+        if not os.path.exists(val_path):
+            raise FileNotFoundError(f"找不到验证集文件: {val_path}")
+
+        # 训练集：无索引列
+        train_df = pd.read_csv(train_path)
+        # 验证集：第一列是索引
+        val_df = pd.read_csv(val_path, index_col=0)
+
+        # 防御式检查
+        if target_col not in train_df.columns or target_col not in val_df.columns:
+            raise ValueError(f"目标列 {target_col} 不存在，请检查数据文件列名。")
+
+        X_train = train_df.drop(columns=[target_col])
+        y_train = train_df[target_col].astype(int)
+
+        X_val = val_df.drop(columns=[target_col])
+        y_val = val_df[target_col].astype(int)
+
+        # 防止列不一致（顺序或缺失）
+        if list(X_train.columns) != list(X_val.columns):
+            # 尝试按训练集列顺序重排验证集
+            missing_cols = [c for c in X_train.columns if c not in X_val.columns]
+            extra_cols = [c for c in X_val.columns if c not in X_train.columns]
+            if missing_cols or extra_cols:
+                raise ValueError(
+                    f"第{fold}折特征列不一致。缺失列: {missing_cols}, 多余列: {extra_cols}"
+                )
+            X_val = X_val[X_train.columns]
+
+        # 训练
+        model = DecisionTreeClassifier(**dt_params)
+        train_start_time = time.perf_counter()
+        model.fit(X_train, y_train)
+        train_time_seconds = time.perf_counter() - train_start_time
+
+        # 预测
+        y_pred = model.predict(X_val)
+        y_prob = model.predict_proba(X_val)[:, 1]
+
+        metrics = evaluate_binary(y_val, y_pred, y_prob)
+        metrics["fold"] = fold
+        metrics["train_time_seconds"] = float(train_time_seconds)
+        fold_metrics.append(metrics)
+
+        fold_prediction_df = build_prediction_frame(fold, val_df, y_val, y_pred, y_prob)
+        oof_predictions.append(fold_prediction_df)
+        fold_prediction_save_path = os.path.join(output_dir, f"fold_{fold}_predictions.csv")
+        fold_prediction_df.to_csv(fold_prediction_save_path, index=False, encoding="utf-8-sig")
+
+        print_metric_block(f"Fold {fold}", metrics)
+
+        if metrics["auc"] > best_auc:
+            best_auc = metrics["auc"]
+            best_fold = fold
+            best_model = model
+
+    # 汇总结果
+    metrics_df = pd.DataFrame(fold_metrics)
+    oof_predictions_df = pd.concat(oof_predictions, ignore_index=True)
+    overall_metrics = evaluate_binary(
+        oof_predictions_df["y_true"],
+        oof_predictions_df["y_pred"],
+        oof_predictions_df["y_prob"],
+    )
+
+    mean_row = {
+        "fold": "mean",
+        "accuracy": metrics_df["accuracy"].mean(),
+        "precision": metrics_df["precision"].mean(),
+        "recall": metrics_df["recall"].mean(),
+        "f1": metrics_df["f1"].mean(),
+        "auc": metrics_df["auc"].mean(),
+        "train_time_seconds": metrics_df["train_time_seconds"].mean(),
+        "confusion_matrix": "",
+    }
+
+    print("\n===== 5-Fold Metrics Table =====")
+    print(metrics_df[["fold", "accuracy", "precision", "recall", "f1", "auc", "train_time_seconds"]].to_string(index=False))
+
+    print_metric_block("Mean Across 5 Folds", mean_row)
+    print_metric_block("Overall OOF Metrics", overall_metrics)
+
+    # 保存结果
+    metrics_save_path = os.path.join(output_dir, "decision_tree_fold_metrics.csv")
+    metrics_df.to_csv(metrics_save_path, index=False, encoding="utf-8-sig")
+
+    oof_prediction_save_path = os.path.join(output_dir, "decision_tree_oof_predictions.csv")
+    oof_predictions_df.to_csv(oof_prediction_save_path, index=False, encoding="utf-8-sig")
+
+    summary_save_path = os.path.join(output_dir, "decision_tree_summary.json")
+    with open(summary_save_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "params": dt_params,
+                "best_fold": best_fold,
+                "best_auc": best_auc,
+                "overall_oof_metrics": overall_metrics,
+                "mean_metrics": {
+                    "accuracy": float(metrics_df["accuracy"].mean()),
+                    "precision": float(metrics_df["precision"].mean()),
+                    "recall": float(metrics_df["recall"].mean()),
+                    "f1": float(metrics_df["f1"].mean()),
+                    "auc": float(metrics_df["auc"].mean()),
+                    "train_time_seconds": float(metrics_df["train_time_seconds"].mean()),
+                },
+                "total_train_time_seconds": float(metrics_df["train_time_seconds"].sum()),
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    if best_model is not None:
+        model_save_path = os.path.join(output_dir, "decision_tree_best_model.joblib")
+        joblib.dump(best_model, model_save_path)
+        print(f"\n最佳模型已保存: {model_save_path}")
+
+    print(f"\n指标文件已保存: {metrics_save_path}")
+    print(f"OOF预测文件已保存: {oof_prediction_save_path}")
+    print(f"汇总文件已保存: {summary_save_path}")
+
+if __name__ == "__main__":
+    main()
