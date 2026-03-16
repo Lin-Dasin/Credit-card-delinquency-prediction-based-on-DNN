@@ -1,9 +1,7 @@
 import os
 import time
-import warnings
 import pandas as pd
 
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
 	accuracy_score,
 	precision_score,
@@ -12,6 +10,26 @@ from sklearn.metrics import (
 	roc_auc_score,
 	confusion_matrix,
 )
+
+from xgboost import XGBClassifier
+
+
+# ===================== 可配置参数区域 =====================
+TARGET_COL = "SeriousDlqin2yrs"
+RANDOM_STATE = 42
+
+XGB_PARAMS = {
+	"n_estimators": 300,
+	"max_depth": 5,
+	"learning_rate": 0.05,
+	"subsample": 0.9,
+	"colsample_bytree": 0.9,
+	"objective": "binary:logistic",
+	"eval_metric": "logloss",
+	"random_state": RANDOM_STATE,
+	"n_jobs": -1,
+}
+# =========================================================
 
 
 def evaluate_binary(y_true, y_pred, y_prob):
@@ -44,21 +62,34 @@ def print_vertical_metrics(title, metrics):
 		print(f"{str(key):<{label_width}} : {value}")
 
 
+def load_fold_data(train_path, val_path, target_col):
+	train_df = pd.read_csv(train_path)
+	val_df = pd.read_csv(val_path, index_col=0)
+
+	if target_col not in train_df.columns or target_col not in val_df.columns:
+		raise ValueError(f"目标列 {target_col} 不存在，请检查数据文件列名。")
+
+	X_train = train_df.drop(columns=[target_col])
+	y_train = train_df[target_col].astype(int)
+	X_val = val_df.drop(columns=[target_col])
+	y_val = val_df[target_col].astype(int)
+
+	if list(X_train.columns) != list(X_val.columns):
+		missing_cols = [column for column in X_train.columns if column not in X_val.columns]
+		extra_cols = [column for column in X_val.columns if column not in X_train.columns]
+		if missing_cols or extra_cols:
+			raise ValueError(
+				f"特征列不一致。缺失列: {missing_cols}, 多余列: {extra_cols}"
+			)
+		X_val = X_val[X_train.columns]
+
+	return X_train, y_train, X_val, y_val, val_df
+
+
 def main():
 	project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 	train_dir = os.path.join(project_root, "data", "processed", "five_folds_oversampled")
 	val_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
-
-	target_col = "SeriousDlqin2yrs"
-
-	# 逻辑回归参数：适合二分类+中等规模数据
-	lr_params = {
-		"penalty": "l2",
-		"C": 1.0,
-		"solver": "lbfgs",
-		"max_iter": 2000,
-		"random_state": 42,
-	}
 
 	fold_metrics = []
 	oof_predictions = []
@@ -72,34 +103,16 @@ def main():
 		if not os.path.exists(val_path):
 			raise FileNotFoundError(f"找不到验证集文件: {val_path}")
 
-		# 训练集文件无索引列，验证集文件包含索引列
-		train_df = pd.read_csv(train_path)
-		val_df = pd.read_csv(val_path, index_col=0)
+		X_train, y_train, X_val, y_val, val_df = load_fold_data(
+			train_path=train_path,
+			val_path=val_path,
+			target_col=TARGET_COL,
+		)
 
-		if target_col not in train_df.columns or target_col not in val_df.columns:
-			raise ValueError(f"目标列 {target_col} 不存在，请检查数据文件列名。")
-
-		X_train = train_df.drop(columns=[target_col])
-		y_train = train_df[target_col].astype(int)
-		X_val = val_df.drop(columns=[target_col])
-		y_val = val_df[target_col].astype(int)
-
-		if list(X_train.columns) != list(X_val.columns):
-			missing_cols = [c for c in X_train.columns if c not in X_val.columns]
-			extra_cols = [c for c in X_val.columns if c not in X_train.columns]
-			if missing_cols or extra_cols:
-				raise ValueError(
-					f"第{fold}折特征列不一致。缺失列: {missing_cols}, 多余列: {extra_cols}"
-				)
-			X_val = X_val[X_train.columns]
-
-		model = LogisticRegression(**lr_params)
-
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore")
-			start_time = time.perf_counter()
-			model.fit(X_train, y_train)
-			train_time_seconds = time.perf_counter() - start_time
+		model = XGBClassifier(**XGB_PARAMS)
+		start_time = time.perf_counter()
+		model.fit(X_train, y_train)
+		train_time_seconds = time.perf_counter() - start_time
 
 		y_pred = model.predict(X_val)
 		y_prob = model.predict_proba(X_val)[:, 1]
@@ -120,12 +133,14 @@ def main():
 		oof_predictions_df["y_prob"],
 	)
 
-	print("\n===== 5-Fold Metrics Table =====")
-	print(metrics_df[["fold", "accuracy", "precision", "recall", "f1", "auc", "train_time_seconds"]].to_string(index=False))
+	print("\n===== 5-Fold Metrics Table  =====")
+	print(
+		metrics_df[
+			["fold", "accuracy", "precision", "recall", "f1", "auc", "train_time_seconds"]
+		].to_string(index=False)
+	)
 
-	print_vertical_metrics("Overall OOF Metrics IN Logistic Regression", overall_metrics)
-	
-	
+	print_vertical_metrics("Overall OOF Metrics IN XGBoost", overall_metrics)
 
 
 if __name__ == "__main__":
