@@ -14,6 +14,13 @@ INPUT_FILE_NAME = "train_set_processed_extra.csv"
 RAW_OUTPUT_DIR_NAME = "extra_five_folds"
 STANDARDIZED_OUTPUT_DIR_NAME = "extra_five_folds_standardized"
 OVERSAMPLED_OUTPUT_DIR_NAME = "extra_five_folds_oversampled"
+ENGINEERED_FEATURE_COLUMNS = [
+    "IsUtilMaxed",
+    "TotalLateTimes",
+    "HighUtil_And_Late",
+    "EstMonthlyDebt",
+    "IncomePerDependent",
+]
 
 # 后续删列或不想参与导出的列，直接改这里。
 DROP_COLUMNS = []
@@ -70,6 +77,48 @@ def prepare_dataset(df: pd.DataFrame) -> pd.DataFrame:
         column for column in df.columns if column == TARGET_COL or column not in DROP_COLUMNS
     ]
     return df[selected_columns].copy()
+
+
+def print_feature_export_summary(df: pd.DataFrame) -> None:
+    selected_features = [column for column in df.columns if column != TARGET_COL]
+    selected_feature_set = set(selected_features)
+    included_engineered = [
+        column for column in ENGINEERED_FEATURE_COLUMNS if column in selected_feature_set
+    ]
+    missing_engineered = [
+        column for column in ENGINEERED_FEATURE_COLUMNS if column not in selected_feature_set
+    ]
+
+    print(f"导出前特征数: {len(selected_features)}")
+    print(f"导出前包含的新增特征: {included_engineered}")
+    if missing_engineered:
+        print(f"[提示] 导出前缺少这些新增特征: {missing_engineered}")
+
+
+def verify_output_feature_columns(output_dirs: dict) -> None:
+    file_map = {
+        "raw": os.path.join(output_dirs["raw"], "fold_1_train.csv"),
+        "standardized": os.path.join(output_dirs["standardized"], "fold_1_val_scaled.csv"),
+        "oversampled": os.path.join(output_dirs["oversampled"], "fold_1_train_oversampled.csv"),
+    }
+
+    for dataset_name, file_path in file_map.items():
+        if not os.path.exists(file_path):
+            print(f"[提示] 未找到 {dataset_name} 样例文件: {file_path}")
+            continue
+
+        columns = pd.read_csv(file_path, nrows=0).columns.tolist()
+        feature_set = set(columns)
+        included_engineered = [
+            column for column in ENGINEERED_FEATURE_COLUMNS if column in feature_set
+        ]
+        missing_engineered = [
+            column for column in ENGINEERED_FEATURE_COLUMNS if column not in feature_set
+        ]
+
+        print(f"{dataset_name} 样例文件包含的新增特征: {included_engineered}")
+        if missing_engineered:
+            print(f"[提示] {dataset_name} 样例文件缺少这些新增特征: {missing_engineered}")
 
 
 def save_raw_folds(df: pd.DataFrame, output_dir: str) -> pd.DataFrame:
@@ -255,6 +304,7 @@ def main() -> None:
 
     df = pd.read_csv(input_path, index_col=0)
     df = prepare_dataset(df)
+    print_feature_export_summary(df)
 
     raw_summary = save_raw_folds(df, output_dirs["raw"])
     standardized_summary = save_standardized_folds(output_dirs["raw"], output_dirs["standardized"])
@@ -268,6 +318,7 @@ def main() -> None:
     print(f"原始折数据目录: {output_dirs['raw']}")
     print(f"标准化数据目录: {output_dirs['standardized']}")
     print(f"过采样数据目录: {output_dirs['oversampled']}")
+    verify_output_feature_columns(output_dirs)
     print("处理完成")
 
 

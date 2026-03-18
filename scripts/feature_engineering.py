@@ -79,6 +79,59 @@ def add_late_severity_score(df: pd.DataFrame) -> pd.DataFrame:
 	return df
 
 
+def add_high_util_and_late(df: pd.DataFrame) -> pd.DataFrame:
+	util_column = _resolve_util_column(df)
+	if "TotalLateTimes" not in df.columns:
+		raise ValueError("TotalLateTimes 列不存在，请先调用 add_total_late_times()")
+
+	util_series = pd.to_numeric(df[util_column], errors="coerce")
+	df["HighUtil_And_Late"] = (
+		(util_series > 0.8) & (df["TotalLateTimes"] > 0)
+	).astype("int8")
+	return df
+
+
+def add_utilization_x_total_late(df: pd.DataFrame) -> pd.DataFrame:
+	util_column = _resolve_util_column(df)
+	if "TotalLateTimes" not in df.columns:
+		raise ValueError("TotalLateTimes 列不存在，请先调用 add_total_late_times()")
+
+	util_series = pd.to_numeric(df[util_column], errors="coerce")
+	df["Utilization_x_TotalLate"] = (util_series * df["TotalLateTimes"]).astype("float64")
+	return df
+
+
+def add_est_monthly_debt(df: pd.DataFrame) -> pd.DataFrame:
+	if "MonthlyIncome" not in df.columns or "DebtRatio" not in df.columns:
+		raise ValueError("缺少必要列：MonthlyIncome 或 DebtRatio")
+
+	income_series = pd.to_numeric(df["MonthlyIncome"], errors="coerce")
+	debt_ratio_series = pd.to_numeric(df["DebtRatio"], errors="coerce")
+	
+	# 处理缺失值：使用0代替NaN（表示无收入或无债务）
+	income_series = income_series.fillna(0)
+	debt_ratio_series = debt_ratio_series.fillna(0)
+	
+	df["EstMonthlyDebt"] = (income_series * debt_ratio_series).astype("float64")
+	return df
+
+
+def add_income_per_dependent(df: pd.DataFrame) -> pd.DataFrame:
+	if "MonthlyIncome" not in df.columns or "NumberOfDependents" not in df.columns:
+		raise ValueError("缺少必要列：MonthlyIncome 或 NumberOfDependents")
+
+	income_series = pd.to_numeric(df["MonthlyIncome"], errors="coerce")
+	dependents_series = pd.to_numeric(df["NumberOfDependents"], errors="coerce")
+	
+	# 处理缺失值
+	income_series = income_series.fillna(0)
+	dependents_series = dependents_series.fillna(0)
+	
+	# IncomePerDependent = MonthlyIncome / (NumberOfDependents + 1)
+	df["IncomePerDependent"] = (income_series / (dependents_series + 1)).astype("float64")
+	return df
+
+
 def _save_csv(df: pd.DataFrame, output_path: str) -> None:
 	output_dir = os.path.dirname(output_path)
 	if output_dir:
@@ -124,11 +177,15 @@ def main() -> None:
 
 		df = add_is_util_maxed(df)
 		df = add_total_late_times(df)
-		df = add_late_severity_score(df)
+		# df = add_late_severity_score(df)
+		df = add_high_util_and_late(df)
+		# df = add_utilization_x_total_late(df)
+		df = add_est_monthly_debt(df)
+		df = add_income_per_dependent(df)
 
 		_save_csv(df, output_path)
 
-		print("已生成列: IsUtilMaxed, TotalLateTimes, LateSeverityScore")
+		print("已生成列: IsUtilMaxed, TotalLateTimes, HighUtil_And_Late, EstMonthlyDebt, IncomePerDependent")
 		print("处理完成")
 
 	except Exception as exc:
