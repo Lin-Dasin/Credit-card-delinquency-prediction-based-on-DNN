@@ -21,9 +21,9 @@ RANDOM_STATE = 42
 
 DT_PARAMS = {
     "criterion": "gini",       # 或 "entropy"
-    "max_depth": 10,
+    "max_depth": 4,
     "min_samples_split": 30,
-    "min_samples_leaf": 15,
+    "min_samples_leaf": 200,
     "random_state": RANDOM_STATE,
 }
 
@@ -56,10 +56,18 @@ def find_best_threshold(y_true, y_prob, candidates):
     return float(best_threshold), float(best_f1)
 
 
+def drop_unnamed_columns(df):
+    """移除历史 index 导出产生的 Unnamed 列，避免特征列错位。"""
+    unnamed_cols = [c for c in df.columns if str(c).startswith("Unnamed:")]
+    if unnamed_cols:
+        df = df.drop(columns=unnamed_cols)
+    return df
+
+
 def load_fold_data(train_path, val_path, target_col):
     """读取单折数据并做列一致性检查，返回 (X_train, y_train, X_val, y_val, val_df)。"""
-    train_df = pd.read_csv(train_path)               # 过采样后无索引列
-    val_df = pd.read_csv(val_path, index_col=0)      # 标准化后有索引列
+    train_df = drop_unnamed_columns(pd.read_csv(train_path))
+    val_df = drop_unnamed_columns(pd.read_csv(val_path))
 
     if target_col not in train_df.columns or target_col not in val_df.columns:
         raise ValueError(f"目标列 '{target_col}' 不存在，请检查数据文件列名。")

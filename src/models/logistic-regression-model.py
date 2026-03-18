@@ -44,6 +44,14 @@ def print_vertical_metrics(title, metrics):
 		print(f"{str(key):<{label_width}} : {value}")
 
 
+def drop_unnamed_columns(df):
+	"""移除历史 index 导出产生的 Unnamed 列，避免特征列错位。"""
+	unnamed_cols = [c for c in df.columns if str(c).startswith("Unnamed:")]
+	if unnamed_cols:
+		df = df.drop(columns=unnamed_cols)
+	return df
+
+
 def main():
 	project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 	train_dir = os.path.join(project_root, "data", "processed", "five_folds_oversampled")
@@ -72,9 +80,8 @@ def main():
 		if not os.path.exists(val_path):
 			raise FileNotFoundError(f"找不到验证集文件: {val_path}")
 
-		# 训练集文件无索引列，验证集文件包含索引列
-		train_df = pd.read_csv(train_path)
-		val_df = pd.read_csv(val_path, index_col=0)
+		train_df = drop_unnamed_columns(pd.read_csv(train_path))
+		val_df = drop_unnamed_columns(pd.read_csv(val_path))
 
 		if target_col not in train_df.columns or target_col not in val_df.columns:
 			raise ValueError(f"目标列 {target_col} 不存在，请检查数据文件列名。")

@@ -82,6 +82,14 @@ def print_vertical_metrics(title, metrics):
 		print(f"{str(key):<{label_width}} : {value}")
 
 
+def drop_unnamed_columns(df):
+	"""移除历史 index 导出产生的 Unnamed 列，避免特征列错位。"""
+	unnamed_cols = [c for c in df.columns if str(c).startswith("Unnamed:")]
+	if unnamed_cols:
+		df = df.drop(columns=unnamed_cols)
+	return df
+
+
 def print_feature_summary(selected_features):
 	selected_set = set(selected_features)
 	included_engineered = [
@@ -161,8 +169,8 @@ def resolve_feature_columns(train_df, val_df, target_col):
 
 
 def load_fold_data(train_path, val_path, target_col):
-	train_df = pd.read_csv(train_path)
-	val_df = pd.read_csv(val_path, index_col=0)
+	train_df = drop_unnamed_columns(pd.read_csv(train_path))
+	val_df = drop_unnamed_columns(pd.read_csv(val_path))
 
 	selected_features = resolve_feature_columns(train_df, val_df, target_col)
 
