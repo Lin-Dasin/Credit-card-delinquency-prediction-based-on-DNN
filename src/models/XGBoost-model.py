@@ -20,9 +20,9 @@ RANDOM_STATE = 42
 N_SPLITS = 5
 
 # 目录配置：默认使用新增特征对应的 extra_five_folds 数据
-TRAIN_DIR_NAME = "extra_five_folds_oversampled"
-VAL_DIR_NAME = "extra_five_folds_standardized"
-SOURCE_DATA_FILE_NAME = "train_set_processed_extra.csv"
+TRAIN_DIR_NAME = "five_folds_oversampled"
+VAL_DIR_NAME = "five_folds_standardized"
+SOURCE_DATA_FILE_NAME = "train_set_processed.csv"
 
 # 列配置：
 # 1) INCLUDE_FEATURE_COLUMNS 为空时，默认使用除目标列外的所有列
