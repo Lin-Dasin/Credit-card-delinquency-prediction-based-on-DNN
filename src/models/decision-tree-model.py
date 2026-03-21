@@ -25,6 +25,7 @@ DT_PARAMS = {
     "min_samples_split": 30,
     "min_samples_leaf": 200,
     "random_state": RANDOM_STATE,
+    "class_weight": "balanced",  # 处理类别不平衡
 }
 
 # 阈值搜索范围：在验证集上遍历以下候选值，选取 F1 最高的阈值
@@ -96,14 +97,14 @@ def print_vertical_metrics(title, metrics):
 
 def main():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    train_dir = os.path.join(project_root, "data", "processed", "five_folds_oversampled")
+    train_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
     val_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
 
     fold_metrics = []
     oof_predictions = []
 
     for fold in range(1, 6):
-        train_path = os.path.join(train_dir, f"fold_{fold}_train_oversampled.csv")
+        train_path = os.path.join(train_dir, f"fold_{fold}_train_scaled.csv")
         val_path = os.path.join(val_dir, f"fold_{fold}_val_scaled.csv")
 
         if not os.path.exists(train_path):

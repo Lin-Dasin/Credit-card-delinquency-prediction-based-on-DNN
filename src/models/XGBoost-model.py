@@ -19,15 +19,10 @@ TARGET_COL = "SeriousDlqin2yrs"
 RANDOM_STATE = 42
 N_SPLITS = 5
 
-# 目录配置：默认使用新增特征对应的 extra_five_folds 数据
-TRAIN_DIR_NAME = "five_folds_oversampled"
+TRAIN_DIR_NAME = "five_folds_standardized"
 VAL_DIR_NAME = "five_folds_standardized"
 SOURCE_DATA_FILE_NAME = "train_set_processed.csv"
 
-# 列配置：
-# 1) INCLUDE_FEATURE_COLUMNS 为空时，默认使用除目标列外的所有列
-# 2) EXCLUDE_FEATURE_COLUMNS 中的列会被排除
-# 3) INCLUDE_FEATURE_COLUMNS 非空时，只保留其中存在于数据内的列
 INCLUDE_FEATURE_COLUMNS = []
 EXCLUDE_FEATURE_COLUMNS = []
 ENGINEERED_FEATURE_COLUMNS = [
@@ -83,7 +78,6 @@ def print_vertical_metrics(title, metrics):
 
 
 def drop_unnamed_columns(df):
-	"""移除历史 index 导出产生的 Unnamed 列，避免特征列错位。"""
 	unnamed_cols = [c for c in df.columns if str(c).startswith("Unnamed:")]
 	if unnamed_cols:
 		df = df.drop(columns=unnamed_cols)
@@ -100,8 +94,6 @@ def print_feature_summary(selected_features):
 	]
 
 	print(f"本次训练特征数: {len(selected_features)}")
-	# print(f"本次训练特征: {selected_features}")
-	# print(f"本次纳入的新增特征: {included_engineered}")
 	if missing_engineered:
 		print(f"[提示] 以下新增特征未参与本次训练: {missing_engineered}")
 
@@ -126,10 +118,9 @@ def explain_missing_engineered_features(project_root, selected_features):
 
 	if missing_from_folds:
 		print(
-			"[诊断] 这些新增特征已存在于 train_set_processed_extra.csv，但当前 fold 文件中没有它们: "
+			"[诊断] 这些新增特征已存在于原数据，但当前折文件中没有它们: "
 			f"{missing_from_folds}"
 		)
-		print("[诊断] 这通常说明你在新增特征后，还没有重新运行 scripts/test1.py 来生成最新的 extra_five_folds 数据。")
 
 
 def resolve_feature_columns(train_df, val_df, target_col):
@@ -159,11 +150,7 @@ def resolve_feature_columns(train_df, val_df, target_col):
 		]
 
 	if not selected_features:
-		raise ValueError("没有可用于训练的特征列，请检查 INCLUDE_FEATURE_COLUMNS / EXCLUDE_FEATURE_COLUMNS 配置。")
-
-	missing_from_val = [column for column in selected_features if column not in val_features]
-	if missing_from_val:
-		raise ValueError(f"验证集中缺少必要特征列: {missing_from_val}")
+		raise ValueError("没有可用于训练的特征列，请检查配置。")
 
 	return selected_features
 
@@ -196,7 +183,7 @@ def main():
 	print(f"验证目录: {val_dir}")
 
 	for fold in range(1, N_SPLITS + 1):
-		train_path = os.path.join(train_dir, f"fold_{fold}_train_oversampled.csv")
+		train_path = os.path.join(train_dir, f"fold_{fold}_train_scaled.csv")
 		val_path = os.path.join(val_dir, f"fold_{fold}_val_scaled.csv")
 
 		if not os.path.exists(train_path):
@@ -215,7 +202,17 @@ def main():
 			print_feature_summary(feature_columns)
 			explain_missing_engineered_features(project_root, feature_columns)
 
-		model = XGBClassifier(**XGB_PARAMS)
+		# ===================== 【加入平衡权重】 =====================
+		neg = sum(y_train == 0)
+		pos = sum(y_train == 1)
+		scale_pos_weight = neg / pos if pos > 0 else 1.0
+		# ============================================================
+
+		model = XGBClassifier(
+			**XGB_PARAMS,
+			scale_pos_weight=scale_pos_weight  # <--- 加入平衡
+		)
+
 		start_time = time.perf_counter()
 		model.fit(X_train, y_train)
 		train_time_seconds = time.perf_counter() - start_time

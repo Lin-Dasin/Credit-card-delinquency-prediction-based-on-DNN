@@ -12,6 +12,7 @@ from sklearn.metrics import (
 	precision_score,
 	recall_score,
 	roc_auc_score,
+	roc_curve,
 )
 
 try:
@@ -48,6 +49,29 @@ def evaluate_binary(y_true, y_pred, y_prob):
 		"auc": float(roc_auc_score(y_true, y_prob)),
 		"confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
 	}
+
+
+def find_optimal_threshold_by_youden(y_true, y_prob):
+	"""使用约登指数（Youden Index）找最优阈值。
+	约登指数 J = 灵敏度 + 特异度 - 1 = recall + specificity - 1
+	"""
+	fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+	# 计算specificity（特异度）= 1 - FPR
+	specificity = 1 - fpr
+	# 计算约登指数
+	youden_index = tpr + specificity - 1
+	# 找到最大值对应的索引
+	optimal_idx = np.argmax(youden_index)
+	optimal_threshold = thresholds[optimal_idx]
+	optimal_youden = youden_index[optimal_idx]
+	
+	return optimal_threshold, optimal_youden, float(tpr[optimal_idx]), float(specificity[optimal_idx])
+
+
+def evaluate_with_custom_threshold(y_true, y_prob, threshold):
+	"""使用自定义阈值评估模型。"""
+	y_pred = (y_prob >= threshold).astype(int)
+	return evaluate_binary(y_true, y_pred, y_prob)
 
 
 def print_vertical_metrics(title, metrics):
@@ -159,11 +183,18 @@ def main():
 		train_time_seconds = time.perf_counter() - start_time
 
 		y_prob = model.predict(X_val.values, verbose=0).reshape(-1)
-		y_pred = (y_prob >= 0.5).astype(int)
+		
+		# 使用约登指数找最优阈值
+		optimal_threshold, optimal_youden, optimal_tpr, optimal_specificity = find_optimal_threshold_by_youden(y_val.values, y_prob)
+		y_pred = (y_prob >= optimal_threshold).astype(int)
 
 		metrics = evaluate_binary(y_val, y_pred, y_prob)
 		metrics["fold"] = fold
 		metrics["train_time_seconds"] = float(train_time_seconds)
+		metrics["optimal_threshold"] = float(optimal_threshold)
+		metrics["youden_index"] = float(optimal_youden)
+		metrics["optimal_tpr"] = float(optimal_tpr)
+		metrics["optimal_specificity"] = float(optimal_specificity)
 		fold_metrics.append(metrics)
 
 		fold_prediction_df = pd.DataFrame(
@@ -173,27 +204,33 @@ def main():
 				"y_true": y_val.to_numpy(),
 				"y_pred": y_pred,
 				"y_prob": y_prob,
+				"optimal_threshold": optimal_threshold,
 			}
 		)
 		oof_predictions.append(fold_prediction_df)
 
-		print_vertical_metrics(f"Fold {fold} Metrics", metrics)
+		print_vertical_metrics(f"Fold {fold} Metrics (Optimal Threshold={optimal_threshold:.4f})", metrics)
 
 	metrics_df = pd.DataFrame(fold_metrics)
 	oof_predictions_df = pd.concat(oof_predictions, ignore_index=True)
+	
+	# 对Overall预测使用所有fold的平均最优阈值
+	average_threshold = metrics_df["optimal_threshold"].mean()
+	overall_y_pred = (oof_predictions_df["y_prob"] >= average_threshold).astype(int)
 	overall_metrics = evaluate_binary(
 		oof_predictions_df["y_true"],
-		oof_predictions_df["y_pred"],
+		overall_y_pred,
 		oof_predictions_df["y_prob"],
 	)
+	overall_metrics["average_optimal_threshold"] = float(average_threshold)
 
-	print("\n===== DNN Fold Metrics Table =====")
+	print("\n===== DNN Fold Metrics with Youden Index =====")
 	print(
 		metrics_df[
-			["fold", "accuracy", "precision", "recall", "f1", "auc", "train_time_seconds"]
+			["fold", "accuracy", "precision", "recall", "f1", "auc", "optimal_threshold", "youden_index", "train_time_seconds"]
 		].to_string(index=False)
 	)
-	print_vertical_metrics("Overall OOF Metrics IN DNN", overall_metrics)
+	print_vertical_metrics("Overall OOF Metrics (with Average Optimal Threshold)", overall_metrics)
 
 
 if __name__ == "__main__":

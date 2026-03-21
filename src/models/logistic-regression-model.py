@@ -54,7 +54,7 @@ def drop_unnamed_columns(df):
 
 def main():
 	project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-	train_dir = os.path.join(project_root, "data", "processed", "five_folds_oversampled")
+	train_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
 	val_dir = os.path.join(project_root, "data", "processed", "five_folds_standardized")
 
 	target_col = "SeriousDlqin2yrs"
@@ -66,13 +66,14 @@ def main():
 		"solver": "lbfgs",
 		"max_iter": 2000,
 		"random_state": 42,
+		"class_weight": "balanced"
 	}
 
 	fold_metrics = []
 	oof_predictions = []
 
 	for fold in range(1, 6):
-		train_path = os.path.join(train_dir, f"fold_{fold}_train_oversampled.csv")
+		train_path = os.path.join(train_dir, f"fold_{fold}_train_scaled.csv")
 		val_path = os.path.join(val_dir, f"fold_{fold}_val_scaled.csv")
 
 		if not os.path.exists(train_path):
